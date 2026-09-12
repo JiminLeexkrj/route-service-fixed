@@ -1,93 +1,348 @@
-# 제시간 · TIME QUEST — TMAP 전환본
+route-service
 
-목적지와 도착 마감시간을 정하면 버스·지하철·환승·보행·달리기·택시 경로를 비교하고, GPS 이동에 따라 현재 위치와 행동 안내를 갱신합니다. 기존 게임 UI와 비용 한도 제거를 유지했습니다.
+세 프로젝트(on-time-route-ui, hackathon-route-data-layer, Newbiethon33)와
+REALTIME_DEADLINE_ROUTING_ALGORITHM.md(DARTS)를 하나로 합친 서비스입니다.
 
-## Windows에서 실행
+배포 주소: https://route-service-fixed.vercel.app
 
-1. ZIP 전체를 **새 폴더**에 압축 해제합니다. ZIP 최상위에 `package.json`이 있습니다.
-2. 기존 실행 창을 `Ctrl+C`로 종료합니다.
-3. **`SET-TMAP-KEY.cmd`를 실행**하고 TMAP `appKey`를 붙여넣은 뒤 Enter를 누릅니다. 키는 이 프로젝트의 `.env.local`에 저장됩니다.
-4. **`START-WINDOWS.cmd`를 실행**합니다. Node.js 22 이상이 필요합니다. 설치 뒤 `Ready`가 나타나면 [localhost:3000](http://localhost:3000)을 엽니다.
-5. 목적지 검색 → 정확한 주소 선택 → 마감시간·뛰기·택시 조건 → 길찾기 시작 순서로 진행합니다.
+이 서비스는 단순히 이동시간이 가장 짧은 경로를 고르는 대신, 사용자가 입력한 도착 마감시간 안에
+도착할 확률을 계산합니다. 현재 위치, 대중교통·자동차 경로, 사용자 이동 조건을 종합해 후보를
+비교하고, 이동 중 더 안전한 경로가 발견되면 다음 행동을 다시 제안합니다.
 
-터미널에서는 `package.json`이 있는 폴더에서 `npm ci`, `npm run dev`를 실행해도 됩니다.
+주요 기능
 
-**TMAP 키는 아직 전달받지 않았으므로 비어 있습니다.** 기존 카카오 지도·REST 키는 유지했으며 ODsay 키와 호출 코드는 제거했습니다. TMAP 키가 없을 때 택시만 정상 조회된 것처럼 보이지 않도록 필요한 설정을 명확히 표시합니다.
+목적지와 도착 마감시간 입력 및 브라우저 현재 위치 확인
 
-## API 연결
+Kakao Local을 이용한 목적지 검색
 
-| 설정 | 용도 |
-| --- | --- |
-| `TMAP_APP_KEY` | 필수: SK TMAP 대중교통 상세 경로 API appKey |
-| `TMAP_WALK_APP_KEY` | 선택: 보행자 경로 API를 다른 앱으로 사용할 때 해당 appKey. 비어 있으면 `TMAP_APP_KEY` 사용 |
-| `NEXT_PUBLIC_KAKAO_MAP_JAVASCRIPT_KEY` | 카카오 배경 지도 |
-| `KAKAO_REST_API_KEY` | 이름·주소 검색 및 선택적인 택시 도로 경로 |
-| `SEOUL_BUS_API_KEY` | 선택: 서울 정류소정보조회 서비스 일반(Decoding) 키 |
-| `SEOUL_SUBWAY_API_KEY` | 선택: 서울시 지하철 실시간 도착정보 키 |
-| `ROUTE_DATA_MODE` | `live`: 실제 응답만, `demo`: 훈련, `auto`: 실제 조회 실패 시 명시된 훈련 모드 |
+Tmap 대중교통과 Kakao Mobility 자동차 경로를 동시에 조회해 최대 4개 후보 구성
 
-[SK open API 이용 안내](https://transit.tmapmobility.com/guide/procedure)에 따라 앱을 생성하고 **대중교통 API** 상품을 연결해야 합니다. 요약 API만 활성화한 경우 상세 승하차·지도 좌표를 받는 데 필요한 권한이 없을 수 있습니다. 가까운 목적지의 도보 전용 경로는 **TMAP 보행자 경로안내** 상품 권한도 필요합니다. 대중교통 경로 안의 보행 구간은 대중교통 상세 응답에 포함됩니다.
+후보별 예상 도착시각, 정시 도착 확률, 비용, 환승 횟수, 도보 거리 비교
 
-수동 설정은 `.env.local`에서 다음 항목만 입력한 뒤 서버를 재시작합니다.
+DARTS 기반 위험도(SAFE, CAUTION, DANGER, LATE) 및 추천 경로 계산
 
-```dotenv
-TMAP_APP_KEY=발급받은_appKey
-```
+Kakao Maps에 선택한 경로, 현재 위치, 목적지 표시
 
-서버 키에는 `NEXT_PUBLIC_`을 붙이지 않습니다. 개인 설정이 든 ZIP을 공개 저장소에 올리지 마세요. 설정 도우미는 기존 카카오 키를 덮어쓰지 않습니다.
+GPS 변화에 따른 현재 위치 마커 이동과 조건부 경로 재평가
 
-### 실제 도착분과 경로 소요시간
+비용·도보 거리·택시 허용 여부를 반영한 사용자 맞춤 추천
 
-TMAP 상세 경로는 버스·지하철 노선, 승하차 장소, 경유 정류장, 구간 시간과 보행 동작을 제공합니다. **개별 차량이 지금 몇 분 뒤에 도착하는지는 이 응답만으로 확인할 수 없습니다.** 운행 중 플래그와 구간 소요시간을 실제 차량 도착분으로 바꾸어 표시하지 않습니다.
+API 키 또는 외부 API 호출에 문제가 있을 때 Mock 데이터로 자동 전환
 
-실시간 탭의 기존 서울 공공 API 연결은 유지했습니다. 버스는 TMAP 정류장 ID를 다른 기관의 ID로 재사용하지 않고, 명칭과 좌표로 서울 정류장 번호를 확인합니다. 같은 이름의 맞은편 정류장이 모호하면 연결하지 않습니다. 지하철은 지원되는 수도권 1~9호선의 역명·노선·다음 역을 확인합니다. 해당 키가 없으면 '미연결'로 표시하며 경로 안내 자체는 이용할 수 있습니다.
+버튼 한 번으로 교통체증과 추천 경로 변경 과정을 확인하는 데모 시나리오
 
-- [서울특별시 정류소정보조회 서비스](https://www.data.go.kr/data/15000303/openapi.do)
-- [서울시 지하철 실시간 도착정보](https://data.seoul.go.kr/dataList/OA-12764/A/1/datasetView.do)
+서비스 동작 흐름
 
-## 위치에 따라 달라지는 화면
+flowchart TD
+    A["목적지·마감시간 입력"] --> B["브라우저 GPS로 출발 좌표 확인"]
+    B --> C["Kakao Local로 목적지 좌표 검색"]
+    C --> D["POST /api/evaluate"]
+    D --> E["Tmap 대중교통 + Kakao 자동차 후보 조회"]
+    E --> F["RawRoute를 DARTS 정책으로 변환"]
+    F --> G["500회 시뮬레이션 및 위험도 계산"]
+    G --> H["추천 경로·다음 행동·대안 생성"]
+    H --> I["현황판·지도·경로 비교 UI 갱신"]
+    I --> J{"150m 이상 이동하고 3분 이상 경과?"}
+    J -- 예 --> D
+    J -- 아니요 --> K["지도 위치 마커만 즉시 이동"]
 
-- `watchPosition`으로 GPS를 계속 수신합니다. 지도 포인트는 새 표본을 받으면 약 650ms 동안 새 위치까지 이동합니다. GPS가 멈추면 마지막 확인 위치에 멈추며 임의로 전진하지 않습니다.
-- 정확한 보행 경로가 있으면 재조회 응답을 기다리지 않고 남은 거리·보행 시간·다음 보행 동작을 GPS마다 갱신합니다.
-- 약 10m 이상 이동하고 위치 오차를 벗어나면 현재 좌표에서 TMAP을 다시 조회합니다. 자동 요청은 최소 10초 간격이고 동시에 한 개만 실행합니다. 요청 도중 이동한 새 좌표는 다음 조회에 사용하며 늦은 응답이 위치 포인트를 과거로 돌리지 않습니다.
-- 대중교통 API는 한 번에 최대 10개 후보를 받아 이동 수단별 대표 경로를 먼저 보존합니다. 추천이 바뀌면 경로 카드·선·지금 할 일을 갱신합니다. API가 실제로 반환하지 않은 버스나 지하철을 만들어 넣지 않습니다.
-- 경로가 바뀌어도 지도 객체를 다시 생성하지 않습니다. 전체 보기와 경로 직접 선택 때만 축척을 맞춥니다. 지도를 끌면 따라가기를 멈추고 현재 위치 버튼으로 재개합니다.
-- 승차 확인 후에는 해당 차량·하차 지점 안내를 유지하면서 GPS 포인트를 계속 갱신합니다. 하차 확인 후 자동 경로 조회를 재개합니다. '현재 위치에서 재탐색'은 언제든 사용할 수 있습니다.
-- 화면을 숨기면 자동 API 조회를 멈추고, 조회 실패 후에는 60초 기다렸다 재시도합니다. 명시적인 새로고침은 바로 재시도합니다. 안내 종료 시 GPS·요청·마커 애니메이션을 정리합니다.
+GPS 좌표는 watchPosition으로 계속 수신하므로 지도 위 현재 위치 마커는 좌표가 들어올 때마다
+움직입니다. 다만 유료 API 호출량을 줄이기 위해 서버 경로 재평가는 마지막 평가 후 3분 이상
+경과하고 150m 이상 이동한 경우에만 실행합니다.
 
-[TMAP 공식 요금 안내](https://transit.tmapmobility.com/)에는 무료 대중교통 API 한도가 **하루 10건**으로 표시됩니다(2026-09-12 확인). 위치를 바꾸며 반복 테스트하면 한도에 빨리 도달할 수 있습니다. 앱에 연결된 실제 상품의 한도를 확인하세요. 이 코드가 유료 상품을 신청하거나 결제하지는 않습니다.
+구성
 
-## 상세 안내와 제한
+src/components, src/hooks/use-trip-demo.ts, src/types/trip.ts — UI (구 on-time-route-ui)
 
-- 버스, 지하철, 고속·시외버스, 기차, 항공, 해운은 응답이 있을 때 각 수단으로 표시합니다. 장거리 수단은 실제 출발편·예약·탑승 마감을 운영사에서 확인해야 합니다.
-- 지도는 TMAP 대중교통의 `passShape.linestring`과 보행 `steps.linestring`을 그대로 사용합니다. 형상이 빠졌거나 잘못된 구간만 점선으로 구분합니다.
-- 보행자 API가 성공한 가까운 목적지는 도보 전용 후보를 제공합니다. 사용자가 설정한 보행 가능 거리보다 실제 경로가 길면 전용 후보에서 제외합니다.
-- 뛰기 ON이면 60m~5km의 야외 보행 구간에 시속 8km 가정을 적용합니다. 중간 보행 환승에도 적용하고 지하철 실내 환승은 제외합니다. 보행 시간의 60%를 하한으로 남기며 교통수단 운행시간은 줄이지 않습니다.
-- '지금 할 일'에 승차 정류장, 노선, 다음 역 방면, 하차 지점, 실제 보행 지시문을 표시합니다. 실시간 도착분은 별도 API에서 확인된 경우에만 추가합니다. 실제 이동 뒤 도착·승차·하차 버튼으로 진행합니다.
-- 총 예상 도착과 정시 도착 확률은 이동시간 분포 모델의 추정입니다. 실제 차량 출발 시간표와 완전히 동기화된 예측은 아닙니다. 택시의 배차·승차 대기는 주행시간에 포함되지 않습니다.
-- 실제 휴대폰 이동 추적에는 HTTPS와 위치 권한이 필요합니다. 화면이 꺼지거나 브라우저가 중단되면 지속 추적을 보장하지 않습니다.
+src/lib/routes, src/lib/location, src/lib/places, src/app/api/routes, src/app/api/places — 위치·경로 데이터 레이어 (구 hackathon-route-data-layer)
 
-## 오류가 나면
+src/lib/algorithm/* — DARTS 알고리즘 구현 (신규, REALTIME_DEADLINE_ROUTING_ALGORITHM.md 기반)
 
-| 화면 코드 | 조치 |
-| --- | --- |
-| `TMAP_KEY_MISSING` | `SET-TMAP-KEY.cmd`에서 appKey 저장 후 서버 재시작 |
-| 인증·HTTP 401/403 | SK open API의 appKey 및 해당 상품 사용 권한 확인 |
-| HTTP 429·호출 한도 | 해당 앱의 호출 수·이용 한도 확인 |
-| `TMAP_11`~`TMAP_14`, `TMAP_NO_RESULTS` | 실제 조회 출발 좌표와 목적지 주소 확인. 가까운 곳은 보행자 API 권한 확인 |
-| `TMAP_NO_SERVICE` | 응답 경로가 모두 운행 종료로 표시됨. 출발 시각·지점 확인 |
-| `TMAP_TIMEOUT`, `TMAP_NETWORK` | 인터넷 연결·방화벽 확인 후 재시도 |
-| `TMAP_INVALID_RESPONSE` | 오류 내용 복사로 상세 내용 전달 |
+src/app/api/evaluate — 후보 경로 조회 + DARTS 평가를 합친 서버 API
 
-일부 제공자만 실패한 경우 성공한 경로와 연결 상태를 함께 표시합니다. 대중교통을 받지 못했을 때는 택시만 표시되는 이유를 접지 않은 안내로 보여줍니다. 제공자 오류에 인증값이 포함되어도 브라우저 응답에서는 제거합니다.
+src/services/trip-service.ts — ApiTripService가 위 API를 호출해 UI가 쓰는 TripSnapshot으로 변환
 
-## 검증
+코드 기능 설명
 
-```powershell
-npm test
-npm run typecheck
-npm run build
-```
+1. 화면과 사용자 입력
+
+파일
+
+기능
+
+src/app/page.tsx
+
+앱 진입점으로 AppShell을 렌더링합니다.
+
+src/components/app-shell.tsx
+
+검색 전에는 랜딩 화면, 검색 후에는 이동 현황 화면을 보여줍니다.
+
+src/components/destination-form.tsx
+
+목적지·마감시간을 검증하고 현재 위치 권한을 요청합니다.
+
+src/components/trip-dashboard.tsx
+
+상태, 알림, 추천 행동, 지도, 후보 경로, 이동 조건을 한 화면에 조합합니다.
+
+src/components/trip-status-card.tsx
+
+현재시각, 마감시간, 예상 도착, 남은 시간과 정시 도착 확률을 표시합니다.
+
+src/components/route-comparison.tsx
+
+후보 경로를 카드 형태로 비교하고 지도에 표시할 경로를 선택합니다.
+
+src/components/user-preference-panel.tsx
+
+최대 추가비용, 도보 거리, 뛰기 가능 여부, 택시 허용 여부를 입력받습니다.
+
+src/components/map/RouteMap.tsx
+
+Kakao Maps 경로선과 위치 마커를 표시하며, 지도 키가 없으면 SVG 경로 도식으로 대체합니다.
+
+2. 위치 추적과 상태 관리
+
+src/hooks/use-trip-demo.ts가 클라이언트의 이동 상태를 총괄합니다.
+
+길찾기 시작 시 tripService.startTrip()으로 최초 경로를 평가합니다.
+
+이동이 시작되면 watchCurrentPosition()으로 GPS를 계속 구독합니다.
+
+새 좌표는 즉시 livePosition에 저장돼 지도 마커를 움직입니다.
+
+150m 이동 및 3분 경과 조건을 모두 만족하면 /api/evaluate를 다시 호출합니다.
+
+재평가 결과에 따라 추천 경로, 정시 도착 확률, 위험도, 알림을 갱신합니다.
+
+위치 추적이나 자동 갱신이 일시적으로 실패하면 마지막 위치와 경로를 유지하고 다음 위치 변화 때
+다시 시도합니다.
+
+src/services/trip-service.ts의 ApiTripService는 UI와 서버 API 사이의 어댑터입니다. 목적지 문자열을
+좌표로 변환하고, 트립별 출발지·목적지·마감시간·선호도·경로 전환 이력을 메모리에 보관합니다. 서버의
+TripEvaluation은 UI가 바로 표시할 수 있는 TripSnapshot으로 변환됩니다. 이동 조건만 변경한 경우에는
+직전에 받은 RawRoute를 재사용해 외부 경로 API를 추가 호출하지 않습니다.
+
+3. 장소와 경로 데이터
+
+모듈
+
+역할
+
+src/lib/location/geolocation.ts
+
+navigator.geolocation을 이용한 1회 위치 조회와 연속 위치 추적을 제공합니다.
+
+src/lib/places/kakao.ts
+
+Kakao Local 키워드 검색 결과를 공통 PlaceResult 형식으로 변환합니다.
+
+src/lib/routes/providers/tmap.ts
+
+Tmap 대중교통 응답을 도보·버스·지하철 구간과 지도용 polyline으로 변환합니다.
+
+src/lib/routes/providers/kakao-mobility.ts
+
+Kakao 자동차 길찾기 결과에서 시간, 거리, 택시비, 도로명, polyline을 추출합니다.
+
+src/lib/routes/service.ts
+
+두 provider를 병렬 호출해 최대 4개 후보를 구성합니다. 대중교통이 3개 이상이면 대중교통 3개와 자동차 1개를 우선 사용합니다.
+
+src/lib/routes/mock.ts
+
+정상/정체 상황의 재현 가능한 대중교통·자동차 후보를 생성합니다.
+
+ROUTE_DATA_MODE에 따른 동작은 다음과 같습니다.
+
+값
+
+동작
+
+auto
+
+실제 API를 먼저 호출하고, 사용할 수 있는 후보가 하나도 없으면 Mock으로 전환합니다. 기본값입니다.
+
+live
+
+실제 API 결과만 사용하며 모든 provider가 실패하면 오류를 반환합니다.
+
+demo
+
+외부 경로 API를 호출하지 않고 항상 Mock 시나리오를 사용합니다.
+
+두 실제 provider 중 하나만 실패하면 성공한 provider의 경로는 그대로 사용하고, 실패 원인은 warnings에
+담습니다. 두 provider에서 후보를 하나도 얻지 못한 경우에만 auto 모드가 전체 Mock 경로로 전환됩니다.
+
+4. DARTS 평가 과정
+
+src/lib/algorithm/evaluateTrip.ts가 알고리즘의 단일 진입점이며 다음 순서로 동작합니다.
+
+정책 생성 — policyBuilder.ts가 RawRoute를 구간별 RoutePolicy로 변환하고 같은 노선 조합의
+중복 후보 중 더 빠른 경로만 남깁니다.
+
+불확실성 모델링 — distribution.ts가 교통수단별 변동성과 데이터 신선도에 따라 각 구간의
+P10·P50·P90 시간 분포와 신뢰도를 만듭니다.
+
+확률 시뮬레이션 — simulate.ts가 정책마다 500회 몬테카를로 시뮬레이션을 수행합니다. 버스,
+자동차, 택시는 같은 정체 영향을 받도록 공유 정체 변수를 사용하며 승차·환승 실패 가능성도 반영합니다.
+
+위험도 계산 — risk.ts가 정시 도착 확률, P90 여유시간, 예측 신뢰도를 이용해 위험도를 나눕니다.
+
+정책 선택 — selectPolicy.ts가 비용·도보 거리·택시 허용 여부를 하드 제약으로 적용한 뒤,
+목표 확률을 만족하는 후보를 P90 도착시각 → 비용 → 환승 → 도보 순으로 비교합니다.
+
+전환 안정화 — 추천이 자주 뒤집히지 않도록 확률 및 시간 개선 폭, 연속 확인 횟수, 45초 쿨다운을
+검사합니다. 현재 경로의 정시 도착 확률이 50% 미만이면 즉시 전환할 수 있습니다.
+
+행동 생성 — actionComposer.ts가 KEEP, SWITCH, PREPARE_TAXI 중 다음 행동과 이유,
+실행 기준 시각, fallback 경로를 만듭니다.
+
+위험도 판정 기준은 다음과 같습니다.
+
+위험도
+
+기준
+
+SAFE
+
+정시 확률 90% 이상, P90 기준 5분 이상 여유, 신뢰도 0.7 이상
+
+CAUTION
+
+정시 확률 75% 이상이며 P90 기준 마감시간 이내
+
+DANGER
+
+정시 확률 40% 이상
+
+LATE
+
+정시 확률 40% 미만
+
+알고리즘이 제안하는 재평가 주기는 SAFE 45초, CAUTION 30초, DANGER·LATE 10초입니다. 현재
+MVP의 실제 외부 API 재호출은 비용 절약을 위한 클라이언트 조건(3분 및 150m)을 따르므로 이 값은 추천
+행동의 다음 확인 시각을 계산하는 데 사용됩니다.
+
+5. API
+
+Method
+
+경로
+
+설명
+
+GET
+
+/api/places?keyword=서울역&lat=37.5&lng=127.0
+
+목적지 후보를 검색합니다.
+
+GET
+
+/api/routes?originLat=...&originLng=...&destinationLat=...&destinationLng=...
+
+가공 전 경로 후보와 provider 정보를 반환합니다.
+
+POST
+
+/api/evaluate
+
+경로 후보 조회부터 DARTS 평가까지 한 번에 수행합니다. UI가 사용하는 핵심 API입니다.
+
+POST /api/evaluate 요청 예시:
+
+{
+  "origin": { "lat": 37.586, "lng": 127.029 },
+  "destination": { "lat": 37.555, "lng": 126.970 },
+  "deadline": 1789192800000,
+  "preferences": {
+    "maxExtraCost": 10000,
+    "walkingDistanceMeters": 800,
+    "canRun": false,
+    "allowTaxi": true
+  },
+  "history": { "candidateStreak": 0 }
+}
+
+응답에는 원본 routes, 각 정책의 확률·위험도, recommendedPolicyId, 경로 전환 여부,
+추천 행동, 데이터 출처(live 또는 mock), provider 경고가 포함됩니다. 모든 API 응답은
+Cache-Control: no-store로 반환됩니다.
+
+실행 방법
+
+npm install
+cp .env.example .env.local   # Windows: Copy-Item .env.example .env.local
+npm run dev
+
+http://localhost:3000 접속. API 키가 없어도 그대로 동작합니다 — lib/routes/service.ts가
+Kakao/Tmap 호출 실패를 자동으로 감지해 Mock 경로 데이터로 전환하고, DARTS 평가 코드는 실제 데이터와
+동일한 방식으로 그 Mock 데이터를 평가합니다.
+
+데모에서 검색 가능한 목적지(Mock 장소 DB): 서울역, 고려대학교, 강남역, 서울시청.
+
+API 키가 준비되면
+
+.env.local에 아래 값을 채우고 개발 서버를 재시작하면 실제 데이터로 자동 전환됩니다. 코드 변경은
+필요 없습니다.
+
+NEXT_PUBLIC_KAKAO_MAP_JAVASCRIPT_KEY=
+KAKAO_REST_API_KEY=
+TMAP_API_KEY=
+
+TMAP_API_KEY는 openapi.sk.com에서 앱 생성 후 "대중교통" 상품을 등록하면
+appKey로 발급됩니다. HTTP 헤더(appKey) 인증이라 Kakao Local과 마찬가지로 서버 발신 IP 제약이 없습니다.
+
+알고리즘 모듈 (src/lib/algorithm)
+
+파일
+
+역할 (문서 섹션)
+
+distribution.ts
+
+신선도/신뢰도 계산, 모드별 경험적 TimeDistribution 합성 (§5-A)
+
+policyBuilder.ts
+
+RawRoute → RoutePolicy 변환, 중복 후보 제거, 정책 단위 fallback 지정 (§5-C)
+
+simulate.ts
+
+정책별 500회 몬테카를로 시뮬레이션, 공유 정체 변수 적용 (§5-E)
+
+risk.ts
+
+calculateRiskLevel (§6)
+
+selectPolicy.ts
+
+하드 제약, 확률 목표, 사전식 비교, 전환 히스테리시스 (§5-G, §5-H)
+
+actionComposer.ts
+
+다음 행동/이유/실행 시각/fallback 생성 (§5-I)
+
+replanScheduler.ts
+
+위험도별 재평가 주기 (§7)
+
+evaluateTrip.ts
+
+위 모듈을 묶는 단일 진입점 (§8 runDarts의 API 버전)
+
+알려진 MVP 단순화
+
+사용자별 도보 속도 학습(§5-B), 실제 이동편 단위 fallback(§4 FallbackBranch)은 정책 단위 fallback으로 단순화했습니다.
+
+전환 확인 횟수·쿨다운(§5-H)은 브라우저의 ApiTripService 메모리에 저장되며, 페이지를 새로고침하면 초기화됩니다(DB 없음).
+
+Tmap 대중교통 API 무료 티어는 일 10건 호출 제한이 있습니다(SK Open API "대중교통" 상품 기준). 한도를 넘으면 Mock으로 자동 전환됩니다.
+
+canRun 값은 UI와 데이터 타입에는 포함되지만 현재 경로 provider가 RUN 구간을 생성하지 않아 실제 추천 결과에는 반영되지 않습니다.
+
+Tmap 대중교통 응답은 현재 조회 시점의 경로 후보이며 코드상 isRealtime: false로 처리합니다. Kakao 자동차 경로만 isRealtime: true로 표시됩니다.
 
 제공자 응답을 모의한 회귀 테스트와 React/jsdom 상호작용 테스트를 사용합니다. TMAP 헤더·좌표·단위·다양한 수단, 중간 달리기, 도보 전용 경로, 오류 코드, GPS 이동·재탐색·오래된 응답 무시, 지도 유지와 마커 보간을 확인합니다. 실제 TMAP appKey가 없어 계정 권한과 실제 경로 응답은 검증하지 못했습니다. 실제 휴대폰 GPS와 브라우저 시각 검증은 별도입니다.
 
