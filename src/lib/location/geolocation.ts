@@ -1,7 +1,8 @@
 import type { LocationFix } from "@/lib/routes/types";
 
 export type GeolocationRequestOptions = Pick<PositionOptions, "enableHighAccuracy" | "maximumAge" | "timeout">;
-const DEFAULT_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 };
+const DEFAULT_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 10_000, maximumAge: 30_000 };
+const FALLBACK_OPTIONS: PositionOptions = { enableHighAccuracy: false, timeout: 15_000, maximumAge: 60_000 };
 
 function requireGeolocation(): Geolocation {
   if (typeof window !== "undefined" && !window.isSecureContext) {
@@ -32,16 +33,28 @@ function toFix(position: GeolocationPosition): LocationFix {
   };
 }
 
-export function getCurrentPosition(options: GeolocationRequestOptions = {}): Promise<LocationFix> {
+function requestPosition(options: PositionOptions): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
     try {
-      requireGeolocation().getCurrentPosition(
-        (position) => resolve(toFix(position)),
-        (error) => reject(new Error(locationErrorMessage(error))),
-        { ...DEFAULT_OPTIONS, ...options },
-      );
+      requireGeolocation().getCurrentPosition(resolve, reject, options);
     } catch (error) { reject(error); }
   });
+}
+
+// GPS 신호가 약한 실내·노트북 환경에서는 고정밀 측위가 시간 내에 끝나지 않을 수 있어,
+// 시간 초과(code 3) 시 와이파이/네트워크 기반의 저정밀 측위로 한 번 더 시도한다.
+export async function getCurrentPosition(options: GeolocationRequestOptions = {}): Promise<LocationFix> {
+  try {
+    return toFix(await requestPosition({ ...DEFAULT_OPTIONS, ...options }));
+  } catch (error) {
+    const isTimeout = (error as GeolocationPositionError | null)?.code === 3;
+    if (!isTimeout) throw new Error(locationErrorMessage(error));
+    try {
+      return toFix(await requestPosition({ ...FALLBACK_OPTIONS, ...options }));
+    } catch (fallbackError) {
+      throw new Error(locationErrorMessage(fallbackError));
+    }
+  }
 }
 
 export function watchCurrentPosition(
