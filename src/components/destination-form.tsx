@@ -15,9 +15,8 @@ import {
 } from "lucide-react";
 import { PreferenceControls } from "@/components/user-preference-panel";
 import { RouteMap } from "@/components/map/RouteMap";
-import { locationErrorMessage, watchCurrentPosition } from "@/lib/location/geolocation";
 import { searchPlace } from "@/lib/routes/client";
-import type { Coordinate, LocationFix, PlaceResult } from "@/lib/routes/types";
+import type { Coordinate, PlaceResult } from "@/lib/routes/types";
 import { getDefaultDeadline, toDateTimeLocalValue } from "@/lib/time";
 import {
   DEFAULT_PREFERENCES,
@@ -51,12 +50,9 @@ export function DestinationForm({
   const [places, setPlaces] = useState<PlaceResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
-  const [locationMapOpen, setLocationMapOpen] = useState(false);
-  const [liveFix, setLiveFix] = useState<LocationFix | null>(null);
-  const stopWatchingRef = useRef<(() => void) | null>(null);
   const searchRequest = useRef<AbortController | null>(null);
   const origin = location ? { lat: location.latitude, lng: location.longitude } : undefined;
-  useEffect(() => () => { searchRequest.current?.abort(); stopWatchingRef.current?.(); }, []);
+  useEffect(() => () => searchRequest.current?.abort(), []);
 
   const selectPlace = (place: PlaceResult) => {
     searchRequest.current?.abort();
@@ -99,27 +95,11 @@ export function DestinationForm({
   }, []);
 
   const handleLocation = async () => {
-    // 다시 누르면 위치 추적 지도를 닫는다 (토글).
-    if (locationMapOpen) {
-      stopWatchingRef.current?.();
-      stopWatchingRef.current = null;
-      setLocationMapOpen(false);
-      return;
-    }
-
-    setMapOpen(false); // 목적지 선택 지도와 동시에 열지 않는다.
     setIsLocating(true);
     setFormError(null);
     try {
       const current = await onResolveLocation();
       setLocation(current);
-      setLiveFix({ lat: current.latitude, lng: current.longitude, accuracy: 9999, heading: null, speed: null, timestamp: Date.now() });
-      setLocationMapOpen(true);
-      // 위치를 계속 갱신해서 정확도가 실제로 좋아지고 있는지 지도에서 바로 확인할 수 있게 한다.
-      stopWatchingRef.current = watchCurrentPosition(
-        (fix) => setLiveFix(fix),
-        (cause) => setFormError(locationErrorMessage(cause)),
-      );
     } catch (cause) {
       setFormError(cause instanceof Error ? cause.message : "현재 위치를 확인하지 못했어요. 다시 시도해 주세요.");
     } finally {
@@ -188,18 +168,10 @@ export function DestinationForm({
         {selectedPlace && <div role="status" className="rounded-xl border border-[#d8fa48]/20 bg-[#d8fa48]/5 p-3 text-xs text-[#d8fa48]"><strong className="flex items-center gap-2"><CheckCircle2 size={14} /> 선택한 목적지: {selectedPlace.name}</strong><span className="mt-1 block pl-5 text-slate-400">{selectedPlace.address}</span></div>}
         {mapOpen && <RouteMap origin={origin ?? selectedPlace ?? { lat: 37.5665, lng: 126.978 }} destination={selectedPlace} onPickDestination={pickOnMap} className="h-80" />}
         <label className="block"><span className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-300"><CalendarClock size={14} className="text-[#bda4ff]" /> 도착 마감시간</span><input type="datetime-local" value={deadline} min={minimumDeadline} onChange={(event) => setDeadline(event.target.value)} className="quest-input" /></label>
-        <button type="button" onClick={() => void handleLocation()} disabled={isLocating} aria-expanded={locationMapOpen} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-white/25">
+        <button type="button" onClick={() => void handleLocation()} disabled={isLocating} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[0.025] p-3 text-left transition hover:border-white/25">
           <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#d8fa48]/10 text-[#d8fa48]">{isLocating ? <LoaderCircle size={17} className="animate-spin" /> : <LocateFixed size={17} />}</span>
-          <span className="min-w-0 flex-1"><span className="block text-xs font-bold">{location ? "현재 위치 확인 완료" : "현재 위치 사용"}</span><span className="mt-1 block truncate text-[11px] text-slate-400">{location ? (liveFix ? `위치 오차 ±${Math.round(liveFix.accuracy)}m` : "위치 정확도 확인 중") : "출발 지점을 확인해 주세요"}</span></span><ArrowRight size={15} className="shrink-0 text-slate-500" />
+          <span className="min-w-0 flex-1"><span className="block text-xs font-bold">{location ? "현재 위치 확인 완료" : "현재 위치 사용"}</span><span className="mt-1 block truncate text-[11px] text-slate-400">{location?.label ?? "출발 지점을 확인해 주세요"}</span></span><ArrowRight size={15} className="shrink-0 text-slate-500" />
         </button>
-        {locationMapOpen && (
-          <RouteMap
-            origin={liveFix ?? origin ?? { lat: 37.5665, lng: 126.978 }}
-            destination={null}
-            position={liveFix}
-            className="h-80"
-          />
-        )}
         <div className="border-t border-white/10 pt-5"><p className="mb-3 font-mono text-[10px] tracking-widest text-slate-500">CHOOSE YOUR SKILLS</p><PreferenceControls value={preferences} onChange={setPreferences} /></div>
       </div>
       {visibleError && <div role="alert" className="mt-4 rounded-lg border border-red-300/15 bg-red-400/10 p-3 text-xs leading-5 text-red-200">
