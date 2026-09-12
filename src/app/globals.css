@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; --background: #0b0e15; --foreground: #f2f4f8; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { min-height: 100vh; margin: 0; background: var(--background); color: var(--foreground); font-family: Pretendard, "Pretendard Variable", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+button, input, select { font: inherit; }
+button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+button:disabled { cursor: not-allowed; opacity: .5; }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid #d8fa48; outline-offset: 4px; }
+::selection { background: #d8fa48; color: #0b0e15; }
+.quest-shell { background: radial-gradient(ellipse at 5% 8%, #a186f611, transparent 40%), radial-gradient(ellipse at 90% 30%, #d8fa4806, transparent 38%), #0b0e15; }
+.quest-panel { border: 1px solid #ffffff14; border-radius: 22px; background: #131823; box-shadow: 0 12px 40px #00000012; }
+.quest-eyebrow { font: 600 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .18em; color: #b0ba91; }
+.quest-route-art { background: linear-gradient(#131823ee, #131823ee), repeating-linear-gradient(0deg, transparent, transparent 24px, #ffffff05 25px); }
+.quest-input { display: block; min-width: 0; width: 100%; height: 52px; border: 1px solid #ffffff20; border-radius: 12px; background: #0c1019; padding: 0 14px; color: #f1f5f9; font-size: 14px; transition: border-color .2s; }
+.quest-input:focus { border-color: #d8fa48; }
+.quest-input::placeholder { color: #707d90; font-size: 12px; }
+.quest-button, .quest-button-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; border-radius: 11px; padding: 10px 15px; font-size: 12px; font-weight: 750; transition: background .2s, border-color .2s; }
+.quest-button { background: #d8fa48; border: 1px solid #d8fa48; color: #182007; }
+.quest-button:hover:not(:disabled) { background: #e7ff7d; box-shadow: 0 0 28px #d8fa481c; }
+.quest-button-secondary { border: 1px solid #ffffff25; background: #ffffff04; color: #d5dce8; }
+.quest-button-secondary:hover:not(:disabled) { border-color: #ffffff55; background: #ffffff09; }
+.skill-tile { padding: 13px; text-align: left; border: 1px solid #ffffff15; border-radius: 12px; background: #0e131d; color: #94a3b8; transition: border-color .2s, background .2s; }
+.skill-tile-active { border-color: #bda4ff70; background: #bda4ff0b; color: #d8c8ff; }
+.range-control { height: 4px; accent-color: #d8fa48; cursor: pointer; }
+.quest-tab { flex: none; max-width: 310px; min-width: 200px; text-align: left; border: 1px solid #ffffff1c; border-radius: 14px; padding: 14px 17px; color: #c0cad9; background: #131823; transition: border-color .2s; }
+.quest-tab[aria-pressed="true"] { background: #d8fa4810; border-color: #d8fa48aa; color: #e7ff9e; }
+.quest-timer { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; letter-spacing: -.06em; }
+.hide-scrollbar { scrollbar-width: none; }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.route-map-badge { display: flex; align-items: center; gap: 5px; width: max-content; padding: 6px 10px; border: 2px solid white; border-radius: 999px; color: white; font-size: 12px; font-weight: 800; white-space: nowrap; box-shadow: 0 3px 12px #0f172a40; }
+.route-map-icon .route-map-badge { transform: translate(-50%, -115%); }
+.route-heading { display: inline-block; font-size: 16px; }
+.route-user-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: white; box-shadow: 0 0 0 4px #ffffff40; flex: none; }
+.leaflet-container { font: inherit; color-scheme: light; }
+.leaflet-control-attribution { color: #334155; }
+@keyframes quest-clear { from { transform: translateY(8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.quest-clear { animation: quest-clear .45s ease-out; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
